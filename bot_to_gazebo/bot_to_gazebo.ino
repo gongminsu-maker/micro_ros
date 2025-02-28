@@ -36,7 +36,7 @@ rcl_timer_t timer;
 #define RIGHT_ENCODER_A 35 // 오른쪽 엔코더 A 채널
 #define RIGHT_ENCODER_B 34 // 오른쪽 엔코더 B 채널
 
-#define WHEEL_SEPARATION 0.30  // 바퀴 간 거리 (30cm)
+#define WHEEL_SEPARATION 0.261  // 바퀴 간 거리 (30cm)
 #define PPR 11                  // 엔코더 펄스
 #define GEAR_RATIO 90           // 감속비
 #define ENCODER_FACTOR (2.0 * M_PI / (PPR * GEAR_RATIO * 2)) // 각속도 변환 계수
@@ -92,12 +92,29 @@ void IRAM_ATTR right_encoder_ISR() {
 
 // **모터 속도 및 방향 설정 함수**
 void setMotor(int pwm_pin, int dir1_pin, int dir2_pin, float speed) {
-    int pwm_value = constrain(abs(speed * 255), 0, 255);
-    // 시리얼 출력 (디버깅용)
+    int pwm_value;
+
+    // 속도가 0.28m/s 초과하면 최대 PWM 255로 설정
+    if (speed > 0.285) {
+        pwm_value = 255;
+    } 
+    // 속도가 0.1m/s 이하이면 PWM을 0으로 설정 (모터가 움직이지 않도록 함)
+    else if (abs(speed) < 0.1) {  
+        pwm_value = 0;
+    } 
+    // 속도를 0~0.28 m/s 범위로 매핑하여 PWM 값 생성
+    else {
+        pwm_value = map(abs(speed) * 1000, 0, 285, 0, 255);  // 0.1m/s 이상 속도 매핑
+    }
+
+    pwm_value = constrain(pwm_value, 0, 255);  // PWM 값 범위 제한
+
+    // 디버깅 출력
     Serial.print("Motor PWM Pin: "); Serial.print(pwm_pin);
     Serial.print(" | Speed: "); Serial.print(speed);
     Serial.print(" | PWM Value: "); Serial.println(pwm_value);
 
+    // **모터 방향 설정**
     if (speed > 0) { // 전진
         digitalWrite(dir1_pin, HIGH);
         digitalWrite(dir2_pin, LOW);
@@ -109,9 +126,9 @@ void setMotor(int pwm_pin, int dir1_pin, int dir2_pin, float speed) {
         digitalWrite(dir2_pin, LOW);
     }
 
+    // **PWM 적용**
     analogWrite(pwm_pin, pwm_value);
 }
-
 // **ROS 2에서 `/cmd_vel` 메시지 수신 시 실행되는 콜백 함수**
 void subscription_callback(const void *msgin) {
     const geometry_msgs__msg__Twist * msg = (const geometry_msgs__msg__Twist *)msgin;
@@ -147,9 +164,9 @@ void update_motor_velocity() {
   float right_angular_velocity = (right_pulse_count * ENCODER_FACTOR) / delta_time;
 
   // ROS 2 메시지로 엔코더 값 발행
-  motor.left_linear_velocity = left_angular_velocity;
-  motor.right_linear_velocity = right_angular_velocity;
-
+  motor.left_w = left_angular_velocity;
+  motor.right_w = right_angular_velocity;
+  motor.linear_vel = (left_angular_velocity + right_angular_velocity)*0.0875/4;
   left_pulse_count = 0;
   right_pulse_count = 0;
   last_time = current_time;
@@ -196,7 +213,7 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time){
 
 // **ESP32 초기 설정**
 void setup() {
-  set_microros_wifi_transports("HY-DORM5-658", "residence658", "192.168.0.8", 8888);
+  set_microros_wifi_transports("HOTPOT","18123030", "192.168.132.124", 8888);
   Serial.begin(115200);
   Wire.begin();
   Wire.setClock(100000); //100kHZ로 설정

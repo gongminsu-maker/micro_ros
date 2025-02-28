@@ -20,8 +20,8 @@ rcl_node_t node;
 #define LEFT_MOTOR_DIR2 5  // 왼쪽 모터 방향 핀 2
 
 #define RIGHT_MOTOR_PWM 4  // 오른쪽 모터 PWM 핀
-#define RIGHT_MOTOR_DIR1 17 // 오른쪽 모터 방향 핀 1
-#define RIGHT_MOTOR_DIR2 16 // 오른쪽 모터 방향 핀 2
+#define RIGHT_MOTOR_DIR1 16 // 오른쪽 모터 방향 핀 1
+#define RIGHT_MOTOR_DIR2 17 // 오른쪽 모터 방향 핀 2
 
 #define WHEEL_SEPARATION 0.30  // 바퀴 간 거리 (30cm)
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
