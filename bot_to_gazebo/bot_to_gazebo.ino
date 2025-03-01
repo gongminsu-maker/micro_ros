@@ -44,10 +44,15 @@ rcl_timer_t timer;
 
 #define EARTH_GRAVITY_MS2 9.80665  // m/s²
 #define DEG_TO_RAD 0.017453292519943295769236907684886 //imu rad/s변환상수
-
+#define SPEED_KP 0.45 // 보정 비례상수
 //엔코더 관련 변수 선언
 volatile int left_pulse_count = 0;
 volatile int right_pulse_count = 0;
+// 새로운 명령을 저장할 변수(새로운 속도명령이 있으면 루프를 빠져나옴)
+volatile float stored_linear_x = 0.0;
+volatile float stored_angular_z = 0.0;
+volatile bool new_command_received = false;  
+unsigned long last_adjust_time = 0;  // 보정 주기 관리
 //imu 관련 변수 선언
 bool DMPReady = false;
 uint8_t devStatus;
@@ -129,6 +134,35 @@ void setMotor(int pwm_pin, int dir1_pin, int dir2_pin, float speed) {
     // **PWM 적용**
     analogWrite(pwm_pin, pwm_value);
 }
+// 모터 보정 함수
+void adjust_motor_speed() {
+    unsigned long current_time = millis();
+    if (current_time - last_adjust_time < 200) return;  // 200ms 주기로 보정
+    last_adjust_time = current_time;
+
+    float left_angular_velocity = motor.left_w;
+    float right_angular_velocity = motor.right_w;
+    float speed_difference = right_angular_velocity - left_angular_velocity;
+
+    // 보정 값 계산
+    float correction = abs(speed_difference) * (WHEEL_SEPARATION / 2.0) * SPEED_KP;
+
+    // 현재 속도에서 보정 적용
+    float left_speed_adjusted = stored_linear_x;
+    float right_speed_adjusted = stored_linear_x;
+
+    if (speed_difference > 0) {
+        left_speed_adjusted += correction;
+        right_speed_adjusted -= correction;
+    } else if (speed_difference < 0) {
+        left_speed_adjusted -= correction;
+        right_speed_adjusted += correction;
+    }
+
+    // 모터 속도 적용
+    setMotor(LEFT_MOTOR_PWM, LEFT_MOTOR_DIR1, LEFT_MOTOR_DIR2, left_speed_adjusted);
+    setMotor(RIGHT_MOTOR_PWM, RIGHT_MOTOR_DIR1, RIGHT_MOTOR_DIR2, right_speed_adjusted);
+}
 // **ROS 2에서 `/cmd_vel` 메시지 수신 시 실행되는 콜백 함수**
 void subscription_callback(const void *msgin) {
     const geometry_msgs__msg__Twist * msg = (const geometry_msgs__msg__Twist *)msgin;
@@ -138,21 +172,16 @@ void subscription_callback(const void *msgin) {
     //오도메트리의 너무 작은 값 방지.
     if (abs(linear_x) < 0.01) linear_x = 0.0;
     if (abs(angular_z) < 0.01) angular_z = 0.0;
-
+    stored_linear_x = linear_x;
+    stored_angular_z = angular_z;
+    new_command_received = true;
+  
     // 시리얼 출력 (디버깅용)
     Serial.print("Received /cmd_vel | Linear X: ");
     Serial.print(linear_x);
     Serial.print(" | Angular Z: ");
     Serial.println(angular_z);
-
-    float left_speed = linear_x - (angular_z * WHEEL_SEPARATION / 2.0);
-    float right_speed = linear_x + (angular_z * WHEEL_SEPARATION / 2.0);
-    // 디버깅 출력
-    Serial.print("Left Speed: "); Serial.print(left_speed);
-    Serial.print(" | Right Speed: "); Serial.println(right_speed);
-
-    setMotor(LEFT_MOTOR_PWM, LEFT_MOTOR_DIR1, LEFT_MOTOR_DIR2, left_speed);
-    setMotor(RIGHT_MOTOR_PWM, RIGHT_MOTOR_DIR1, RIGHT_MOTOR_DIR2, right_speed);
+    
 }
 
 // **엔코더 값을 각속도로 변환하는 함수**
@@ -184,9 +213,9 @@ void update_imu_data(){
     mpu.dmpGetGyro(&gg, FIFOBuffer);
 
     // 가속도 데이터 변환 (m/s² 단위)
-    imu.linear_acceleration.x = aa.x * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
-    imu.linear_acceleration.y = aa.y * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
-    imu.linear_acceleration.z = aa.z * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
+    imu.linear_acceleration.x = -aa.y * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
+    imu.linear_acceleration.y = aa.x * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
+    imu.linear_acceleration.z = -aa.z * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
 
     // 자이로 데이터 변환 (rad/s 단위)
     imu.angular_velocity.x = gg.x * mpu.get_gyro_resolution() * DEG_TO_RAD;
@@ -200,7 +229,7 @@ void update_imu_data(){
   }
 }
 
-// **모터 속도 정보 발행 콜백함수**
+// **모터 속도, imu 정보 발행 콜백함수**
 void timer_callback(rcl_timer_t * timer, int64_t last_call_time){
   RCLC_UNUSED(last_call_time);
   if (timer != NULL){
@@ -213,7 +242,8 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time){
 
 // **ESP32 초기 설정**
 void setup() {
-  set_microros_wifi_transports("HOTPOT","18123030", "192.168.132.124", 8888);
+  //set_microros_wifi_transports("HOTPOT","18123030", "192.168.132.124", 8888);
+  set_microros_wifi_transports("HY-DORM5-658","residence658", "192.168.0.8", 8888);
   Serial.begin(115200);
   Wire.begin();
   Wire.setClock(100000); //100kHZ로 설정
@@ -288,6 +318,35 @@ void setup() {
 }
 
 void loop() {
-  delay(100);
-  RCCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)));
+    unsigned long current_time = millis();
+
+    // 새로운 명령이 있으면 처리 시작
+    if (new_command_received) {
+        if (abs(stored_angular_z) < 0.01) {
+            // 선속도만 있을 때 보정 수행 (200ms 간격으로 실행)
+            if (current_time - last_adjust_time >= 200) {
+                adjust_motor_speed();
+                last_adjust_time = current_time;  // 마지막 실행 시간 갱신
+            }
+        } else {
+            // 회전 명령이 있을 경우 보정 없이 실행
+            float left_speed = stored_linear_x - (stored_angular_z * WHEEL_SEPARATION / 2.0);
+            float right_speed = stored_linear_x + (stored_angular_z * WHEEL_SEPARATION / 2.0);
+
+            Serial.print("Rotation Command | Left Speed: ");
+            Serial.print(left_speed);
+            Serial.print(" | Right Speed: ");
+            Serial.println(right_speed);
+
+            setMotor(LEFT_MOTOR_PWM, LEFT_MOTOR_DIR1, LEFT_MOTOR_DIR2, left_speed);
+            setMotor(RIGHT_MOTOR_PWM, RIGHT_MOTOR_DIR1, RIGHT_MOTOR_DIR2, right_speed);
+
+            //회전 명령이 있을 경우에는 바로 처리 후 플래그 초기화
+            new_command_received = false;
+        }
+    }
+
+    // 50ms 주기로 micro-ROS 이벤트 루프 실행
+    delay(50);
+    RCCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(50)));
 }
