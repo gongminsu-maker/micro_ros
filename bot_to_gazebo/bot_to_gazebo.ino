@@ -54,17 +54,20 @@ volatile float stored_angular_z = 0.0;
 volatile bool new_command_received = false;  
 unsigned long last_adjust_time = 0;  // 보정 주기 관리
 //imu 관련 변수 선언
+
+MPU6050 mpu; 
+Quaternion q;
+VectorInt16 aa;       
+VectorInt16 gg; 
 bool DMPReady = false;
 uint8_t devStatus;
 uint16_t packetSize;
 uint8_t FIFOBuffer[64];
 
-MPU6050 mpu; //이 부분은 라이브러리 코드를 참고해봐야 될듯싶다.
+
 //delta t를 위한 변수 선언
 unsigned long last_time = 0;
 
-VectorInt16 aa;   // Accel sensor measurements
-VectorInt16 gg;   // Gyro sensor measurements
 
 // 에러 매크로
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
@@ -195,6 +198,8 @@ void update_motor_velocity() {
   // ROS 2 메시지로 엔코더 값 발행
   motor.left_w = left_angular_velocity;
   motor.right_w = right_angular_velocity;
+  //속도 노이즈 디버깅용
+  Serial.println(left_angular_velocity,right_angular_velocity);
   motor.linear_vel = (left_angular_velocity + right_angular_velocity)*0.0875/4;
   left_pulse_count = 0;
   right_pulse_count = 0;
@@ -211,6 +216,12 @@ void update_imu_data(){
   if (mpu.dmpGetCurrentFIFOPacket(FIFOBuffer)) {
     mpu.dmpGetAccel(&aa, FIFOBuffer);
     mpu.dmpGetGyro(&gg, FIFOBuffer);
+    mpu.dmpGetQuaternion(&q, FIFOBuffer);
+    //센서 쿼터니언
+    imu.orientation.x = q.x;
+    imu.orientation.y = q.y;
+    imu.orientation.z = q.z;
+    imu.orientation.w = q.w;
 
     // 가속도 데이터 변환 (m/s² 단위)
     imu.linear_acceleration.x = -aa.y * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
@@ -243,7 +254,8 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time){
 // **ESP32 초기 설정**
 void setup() {
   //set_microros_wifi_transports("HOTPOT","18123030", "192.168.132.124", 8888);
-  set_microros_wifi_transports("HY-DORM5-658","residence658", "192.168.0.8", 8888);
+  //set_microros_wifi_transports("HY-DORM5-658","residence658", "192.168.0.8", 8888);
+  set_microros_wifi_transports("KT_GiGA_5D35","ahb66kz314", "172.30.1.58", 8888);
   Serial.begin(115200);
   Wire.begin();
   Wire.setClock(100000); //100kHZ로 설정
@@ -308,7 +320,7 @@ void setup() {
   RCCHECK(rclc_publisher_init_default(&encoder_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(my_custom_message, msg, Motor), "motor_topic"));
   //imu데이터 퍼블리셔
   RCCHECK(rclc_publisher_init_default(&imu_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs,msg,Imu), "/imu/data"));
-  RCCHECK(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(100), timer_callback));
+  RCCHECK(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(50), timer_callback));
   RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
 
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg, &subscription_callback, ON_NEW_DATA));
