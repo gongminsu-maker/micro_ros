@@ -42,11 +42,21 @@ rcl_timer_t timer;
 #define R 0.04375 // 휠의 반지름 (m)
 #define WHEEL_SEPARATION 0.261 
 #define MAX_MOTOR_RPM 110  // 모터 최대 RPM
-#define MAX_PWM 240
+#define MAX_PWM 255 // 9v = 255, 12v = 240
 #define MIN_PWM 0  // 모터가 동작하는 최소 PWM 값
 
 // **PID 제어 변수**
-float Kp_L = 3.1;  // 기존보다 높임
+//12V
+//float Kp_L = 3.1;  // 기존보다 높임
+//float Ki_L = 4.5;   // 적분항 증가
+//float Kd_L = 0.05;  // 미세 조정
+
+//float Kp_R = 3.7;  // 기존보다 높임
+//float Ki_R = 4.5;   // 적분항 증가
+//float Kd_R = 0.05;  // 미세 조정
+
+//9V
+float Kp_L = 3.5;  // 기존보다 높임
 float Ki_L = 4.5;   // 적분항 증가
 float Kd_L = 0.05;  // 미세 조정
 
@@ -152,12 +162,12 @@ void IRAM_ATTR right_encoder_ISR() {
 // **PWM을 RPM 값으로 변환하는 함수 (새로운 공식 적용)**
 // left
 int calculatePWM_LEFT(float rpm) {
-    float pwm = (abs(rpm) / 110.0) * (240 - 0) + 0;  // 240 -> 255로 수정
+    float pwm = (abs(rpm) / 110.0) * (255);  // 9v = 255, 12v = 240
     return constrain((int)pwm, MIN_PWM, MAX_PWM);
 }
 // right
 int calculatePWM_RIGHT(float rpm) {
-    float pwm = (abs(rpm) / 110.0) * (240 - 0) + 0;  // 240 -> 255로 수정
+    float pwm = (abs(rpm) / 110.0) * (255);  // 9v = 255, 12v = 240
     return constrain((int)pwm, MIN_PWM, MAX_PWM);
 }
 

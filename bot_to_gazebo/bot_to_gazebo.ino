@@ -44,7 +44,7 @@ rcl_timer_t timer;
 
 #define EARTH_GRAVITY_MS2 9.80665  // m/s²
 #define DEG_TO_RAD 0.017453292519943295769236907684886 //imu rad/s변환상수
-#define SPEED_KP 0.45 // 보정 비례상수
+#define SPEED_KP 0.1//0.45 // 보정 비례상수
 //엔코더 관련 변수 선언
 volatile int left_pulse_count = 0;
 volatile int right_pulse_count = 0;
@@ -102,21 +102,22 @@ void IRAM_ATTR right_encoder_ISR() {
 void setMotor(int pwm_pin, int dir1_pin, int dir2_pin, float speed) {
     int pwm_value;
 
-    // 속도가 0.28m/s 초과하면 최대 PWM 255로 설정
-    if (speed > 0.285) {
-        pwm_value = 255;
+     //속도가 0.28m/s 초과하면 최대 PWM 255로 설정
+    if (speed > 0.37) {//9V=0.285) {
+        pwm_value = 235;
     } 
-    // 속도가 0.1m/s 이하이면 PWM을 0으로 설정 (모터가 움직이지 않도록 함)
-    else if (abs(speed) < 0.1) {  
+     //속도가 0.1m/s 이하이면 PWM을 0으로 설정 (모터가 움직이지 않도록 함)
+    else if (abs(speed) < 0.09) {  
         pwm_value = 0;
     } 
-    // 속도를 0~0.28 m/s 범위로 매핑하여 PWM 값 생성
+     //속도를 0~0.28 m/s 범위로 매핑하여 PWM 값 생성
     else {
-        pwm_value = map(abs(speed) * 1000, 0, 285, 0, 255);  // 0.1m/s 이상 속도 매핑
+        //pwm_value = map(abs(speed) * 1000, 0, 285, 0, 255); //9V
+        pwm_value = map(abs(speed) * 1000, 0, 370, 0, 240);  //12V
     }
 
-    pwm_value = constrain(pwm_value, 0, 255);  // PWM 값 범위 제한
-
+    pwm_value = constrain(pwm_value, 0, 240);  // PWM 값 범위 제한
+    
     // 디버깅 출력
     Serial.print("Motor PWM Pin: "); Serial.print(pwm_pin);
     Serial.print(" | Speed: "); Serial.print(speed);
@@ -224,8 +225,8 @@ void update_imu_data(){
     imu.orientation.w = q.w;
 
     // 가속도 데이터 변환 (m/s² 단위)
-    imu.linear_acceleration.x = -aa.y * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
-    imu.linear_acceleration.y = aa.x * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
+    imu.linear_acceleration.x = aa.y * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
+    imu.linear_acceleration.y = -aa.x * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
     imu.linear_acceleration.z = -aa.z * mpu.get_acce_resolution() * EARTH_GRAVITY_MS2;
 
     // 자이로 데이터 변환 (rad/s 단위)
@@ -253,9 +254,10 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time){
 
 // **ESP32 초기 설정**
 void setup() {
-  //set_microros_wifi_transports("HOTPOT","18123030", "192.168.132.124", 8888);
+  set_microros_wifi_transports("HOTPOT","18123030", "192.168.98.124", 8888);
   //set_microros_wifi_transports("HY-DORM5-658","residence658", "192.168.0.8", 8888);
-  set_microros_wifi_transports("KT_GiGA_5D35","ahb66kz314", "172.30.1.58", 8888);
+  //set_microros_wifi_transports("KT_GiGA_5D35","ahb66kz314", "172.30.1.58", 8888);
+  //set_microros_wifi_transports("I_phone","dlgksrufdlek", "192.168.166.124", 8888);
   Serial.begin(115200);
   Wire.begin();
   Wire.setClock(100000); //100kHZ로 설정
